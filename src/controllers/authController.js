@@ -24,6 +24,11 @@ const isValidPassword = (password) => {
   return true;
 };
 
+const isValidEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
 exports.signup = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -31,6 +36,12 @@ exports.signup = async (req, res) => {
       return res
         .status(400)
         .json({ error: 'Please provide email and password' });
+
+    if (!isValidEmail(email))
+      return res
+        .status(400)
+        .json({ error: 'Please provide a valid email address' });
+
     if (!isValidPassword(password))
       return res.status(400).json({
         error:
@@ -98,13 +109,11 @@ exports.login = async (req, res) => {
       maxAge: 1000 * 60 * 60 * 24 * 30,
     });
 
-    res
-      .status(200)
-      .json({
-        message: 'Successfully logged in',
-        user: userResponse,
-        accessToken,
-      });
+    res.status(200).json({
+      message: 'Successfully logged in',
+      user: userResponse,
+      accessToken,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -125,12 +134,10 @@ exports.refreshToken = async (req, res) => {
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       });
-      return res
-        .status(403)
-        .json({
-          error: 'Email verification required',
-          needsVerification: true,
-        });
+      return res.status(403).json({
+        error: 'Email verification required',
+        needsVerification: true,
+      });
     }
 
     const newAccessToken = generateAccessToken(user._id);

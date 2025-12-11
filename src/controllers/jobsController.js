@@ -20,6 +20,10 @@ exports.getJobs = async (req, res) => {
       page = 1,
     } = req.query;
 
+    // Validate and cap pagination limits
+    const validatedLimit = Math.min(Math.max(parseInt(limit) || 25, 1), 100);
+    const validatedPage = Math.max(parseInt(page) || 1, 1);
+
     const filters = {};
 
     if (query.trim()) {
@@ -183,21 +187,21 @@ exports.getJobs = async (req, res) => {
         break;
     }
 
-    const skipAmount = (parseInt(page) - 1) * parseInt(limit);
+    const skipAmount = (validatedPage - 1) * validatedLimit;
     const jobs = await Job.find(filters)
       .sort(sortOptions)
       .skip(skipAmount)
-      .limit(parseInt(limit))
+      .limit(validatedLimit)
       .lean();
     const totalCount = await Job.countDocuments(filters);
 
     res.json({
       jobs,
       pagination: {
-        current_page: parseInt(page),
-        per_page: parseInt(limit),
+        current_page: validatedPage,
+        per_page: validatedLimit,
         total_jobs: totalCount,
-        total_pages: Math.ceil(totalCount / parseInt(limit)),
+        total_pages: Math.ceil(totalCount / validatedLimit),
       },
       filters_applied: {
         query: query || null,
@@ -296,5 +300,120 @@ exports.getJobsStats = async (req, res) => {
   } catch (err) {
     console.error('Error getting job statistics:', err.message);
     res.status(500).json({ error: 'Error getting job statistics' });
+  }
+};
+
+// POST /api/jobs/fetch
+exports.fetchJobs = async (req, res) => {
+  const axios = require('axios');
+
+  try {
+    const { query = 'jobs', location = '', pages = 1 } = req.body;
+
+    if (!process.env.RAPIDAPI_KEY) {
+      return res.status(500).json({ error: 'RapidAPI key not configured' });
+    }
+
+    let inserted = 0;
+    let duplicates = 0;
+    let apiCallsUsed = 0;
+
+    for (let page = 1; page <= pages; page++) {
+      const options = {
+        method: 'GET',
+        url: 'https://jsearch.p.rapidapi.com/search',
+        params: {
+          query: location ? `${query} in ${location}` : query,
+          page: page.toString(),
+          num_pages: '1',
+          date_posted: 'all',
+        },
+        headers: {
+          'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+          'x-rapidapi-host': 'jsearch.p.rapidapi.com',
+        },
+      };
+
+      const response = await axios.request(options);
+      apiCallsUsed++;
+
+      const jobs = response.data.data || [];
+
+      for (const job of jobs) {
+        try {
+          const existingJob = await Job.findOne({ job_id: job.job_id });
+          if (existingJob) {
+            duplicates++;
+            continue;
+          }
+
+          await Job.create({
+            employer_name: job.employer_name,
+            employer_logo: job.employer_logo,
+            employer_website: job.employer_website,
+            employer_company_type: job.employer_company_type,
+            job_publisher: job.job_publisher,
+            job_id: job.job_id,
+            job_employment_type: job.job_employment_type,
+            job_title: job.job_title,
+            job_apply_link: job.job_apply_link,
+            job_apply_is_direct: job.job_apply_is_direct,
+            job_apply_quality_score: job.job_apply_quality_score,
+            job_description: job.job_description,
+            job_is_remote: job.job_is_remote,
+            job_posted_at_timestamp: job.job_posted_at_timestamp,
+            job_posted_at_datetime_utc: job.job_posted_at_datetime_utc,
+            job_city: job.job_city,
+            job_state: job.job_state,
+            job_country: job.job_country,
+            job_latitude: job.job_latitude,
+            job_longitude: job.job_longitude,
+            job_benefits: job.job_benefits,
+            job_google_link: job.job_google_link,
+            job_offer_expiration_datetime_utc:
+              job.job_offer_expiration_datetime_utc,
+            job_offer_expiration_timestamp: job.job_offer_expiration_timestamp,
+            job_required_experience: job.job_required_experience,
+            job_required_skills: job.job_required_skills,
+            job_required_education: job.job_required_education,
+            job_experience_in_place_of_education:
+              job.job_experience_in_place_of_education,
+            job_min_salary: job.job_min_salary,
+            job_max_salary: job.job_max_salary,
+            job_salary_currency: job.job_salary_currency,
+            job_salary_period: job.job_salary_period,
+            job_highlights: job.job_highlights,
+            job_job_title: job.job_job_title,
+            job_posting_language: job.job_posting_language,
+            job_onet_soc: job.job_onet_soc,
+            job_onet_job_zone: job.job_onet_job_zone,
+            job_naics_code: job.job_naics_code,
+            job_naics_name: job.job_naics_name,
+          });
+
+          inserted++;
+        } catch (error) {
+          console.error(`Error inserting job ${job.job_id}:`, error.message);
+        }
+      }
+
+      // Rate limiting: wait 1 second between API calls
+      if (page < pages) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    res.json({
+      success: true,
+      inserted,
+      duplicates,
+      apiCallsUsed,
+    });
+  } catch (err) {
+    console.error('Error fetching jobs from external API:', err.message);
+    res.status(500).json({
+      error: 'Error fetching jobs from external API',
+      details: err.message,
+    });
   }
 };

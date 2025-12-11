@@ -20,7 +20,7 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 connectDB();
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 // CORS configuration for local React frontend
@@ -32,6 +32,11 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Routes
 app.use('/api/jobs', jobsRouter);
@@ -45,7 +50,9 @@ app.get('/', (req, res) => {
 // Error handling
 app.use((err, req, res, next) => {
   console.error('Error:', err.message);
-  res.status(500).json({ error: err.message || 'Internal server error' });
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+  });
 });
 
 // Start server

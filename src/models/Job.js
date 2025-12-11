@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema(
   {
@@ -54,4 +54,16 @@ const jobSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Job", jobSchema);
+// Indexes for faster queries
+jobSchema.index({
+  job_title: 'text',
+  job_description: 'text',
+  employer_name: 'text',
+}); // Text search
+jobSchema.index({ job_city: 1, job_state: 1, job_country: 1 }); // Location filtering
+jobSchema.index({ job_posted_at_datetime_utc: -1 }); // Sorting by date
+jobSchema.index({ job_employment_type: 1 }); // Employment type filtering
+jobSchema.index({ job_is_remote: 1 }); // Remote filtering
+jobSchema.index({ job_min_salary: 1, job_max_salary: 1 }); // Salary filtering
+
+module.exports = mongoose.model('Job', jobSchema);
